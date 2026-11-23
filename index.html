@@ -711,9 +711,11 @@ function matchWait(m, src) {
   }
   const lim = S.time + earlyWin();
   for (const exact of any ? [true, false] : [true]) {
+    let k = 0;
     for (let i = S.stepIdx; i < steps.length; i++) {
       const st = steps[i]; if (st.done) continue;
-      if (st.t > lim && i !== S.stepIdx) break;
+      if (st.t > lim && i !== S.stepIdx && !(src === 'mic' && k < 3)) break;
+      k++;
       const n = exact ? st.notes.find(x => !x.ok && x.m === m) : st.notes.find(x => !x.ok && same(x.m, m, true));
       if (n) { n.ok = true; if (--st.left <= 0) st.done = true; return n; }
     }
@@ -1442,12 +1444,11 @@ function micCandidates() { // notes due now, and notes coming up next (which get
   const A = S.arr; if (!A || settings.mode === 'watch') return null;
   const cur = new Set(), ahead = new Set();
   if (settings.mode === 'wait') {
-    const lim = S.time + earlyWin();
-    let first = true;
-    for (let i = S.stepIdx; i < A.steps.length; i++) {
-      const st = A.steps[i]; if (st.done) continue; if (!first && st.t > lim) break;
-      for (const n of st.notes) if (!n.ok) (first ? cur : ahead).add(n.m);
-      first = false; if (cur.size + ahead.size >= 10) break;
+    let k = 0;
+    for (let i = S.stepIdx; i < A.steps.length && k < 3; i++) {
+      const st = A.steps[i]; if (st.done) continue;
+      for (const n of st.notes) if (!n.ok) (k === 0 ? cur : ahead).add(n.m);
+      k++;
     }
     for (const m of cur) ahead.delete(m);
     return { cur, ahead };
@@ -1458,8 +1459,9 @@ function micCandidates() { // notes due now, and notes coming up next (which get
   return { cur, ahead };
 }
 function micFire(m) { Mic.heard = m; Mic.heardT = performance.now(); userOn(m, 90, 'mic'); setTimeout(() => userOff(m, 'mic'), 180); }
-// how strict the listening is: [peak above the room's usual noise, peak above its surroundings, frames it must stay steady, how much louder a new key press must be]
-const MIC_SENS = { high: [4, 1.8, 2, 1.12], normal: [6, 2.2, 2, 1.2], low: [11, 3, 3, 1.35] };
+// how strict the listening is: [peak above the room's usual noise, peak above its surroundings, frames it must stay steady,
+//   how much louder a new key press must be, ms the pitch must stay locked, cents it may drift in that time]
+const MIC_SENS = { high: [4, 1.8, 1, 1.12, 35, 12], normal: [6, 2.2, 2, 1.2, 70, 8], low: [11, 3, 3, 1.35, 160, 8] };
 // Is note m really sounding? Needs sharp, in-tune peaks at its pitch and overtones, well above the room's noise.
 function micEvidence(m, P) {
   const amp = Mic.amp, L = Mic.nLim, f = Mic.fexp[m];
@@ -1569,16 +1571,25 @@ function micPoll(now) {
       const v = Math.max(1e-8, w[w.length >> 1]); for (let b = c; b < Math.min(L, c + 16); b++) Mic.locFloor[b] = v;
     }
   }
-  // a clap or knock makes almost every frequency jump at once; a piano note only lifts its own few
-  let jumped = 0, tot = 0; const n0 = Mic.flatLo, n1 = Mic.flatHi;
-  if (Mic.ringA) for (let i = n0; i < n1; i += 2) {
-    let past = Infinity; for (let k = 0; k < RING; k++) if (now - Mic.ringT[k] <= 180) { const v = Mic.ringA[k * L + i]; if (v < past) past = v; }
-    tot++; if (amp[i] > 4 * past) jumped++;
+  // A clap or knock spreads its new energy evenly over all frequencies; a piano note puts nearly all of it
+  // into a few overtones. Only the even, spread-out kind is treated as a burst.
+  const n0 = Mic.flatLo, n1 = Mic.flatHi;
+  if (Mic.ringA) {
+    const inc = Mic.inc || (Mic.inc = new Float32Array(n1 - n0)); let tot = 0;
+    for (let i = n0; i < n1; i++) {
+      let past = Infinity; for (let k = 0; k < RING; k++) if (now - Mic.ringT[k] <= 120) { const v = Mic.ringA[k * L + i]; if (v < past) past = v; }
+      const d = past === Infinity ? 0 : Math.max(0, amp[i] - past); inc[i - n0] = d; tot += d;
+    }
+    if (tot > 0) {
+      const sorted = Array.from(inc).sort((x, y) => y - x); let top = 0; const nTop = Math.max(3, Math.round(sorted.length * 0.04));
+      for (let i = 0; i < nTop; i++) top += sorted[i];
+      const loudRise = tot / (n1 - n0) > 3 * (Mic.floor || 1e-7);
+      if (loudRise && top / tot < 0.3) Mic.lastBurst = now;
+    }
   }
-  if (tot > 0 && jumped / tot > 0.3) Mic.lastBurst = now;
   const sinceBurst = now - (Mic.lastBurst || -1e9);
   // after a note is counted, wait until it fades a little (or a moment passes) before it can count again
-  for (let m = 21; m <= 108; m++) if (!Mic.armed[m]) { Mic.peakAfter[m] = Math.max(Mic.peakAfter[m], Mic.sal[m]); if (Mic.sal[m] < 0.7 * Mic.peakAfter[m] || now - Mic.attackT[m] > 320) Mic.armed[m] = 1; }
+  for (let m = 21; m <= 108; m++) if (!Mic.armed[m]) { Mic.peakAfter[m] = Math.max(Mic.peakAfter[m], Mic.sal[m]); if (Mic.sal[m] < 0.7 * Mic.peakAfter[m] || now - Mic.attackT[m] > 220) Mic.armed[m] = 1; }
   const sal = Mic.sal;
   for (let m = 21; m <= 108; m++) {
     const t = Mic.tbl[m]; let s = 0;
@@ -1611,18 +1622,18 @@ function micPoll(now) {
           pd.post = c; if (++pd.n >= P[2]) accept(c);
           return;
         }
-        if (c == null || Math.abs(c - pd.c) > 10 || Math.abs(c - pd.c0) > 18 || now - pd.t > 220) { pend.delete(m); return why(m, c == null ? 'pend-lost' : 'pend-drift'); }
+        if (c == null || Math.abs(c - pd.c) > 10 || Math.abs(c - pd.c0) > P[5] || now - pd.t > 260 + P[4]) { pend.delete(m); return why(m, c == null ? 'pend-lost' : 'pend-drift'); }
         if (sal[m] < P[3] * pd.base) { pend.delete(m); return why(m, 'pend-faded'); }
-        pd.c = c; if (++pd.n >= P[2]) accept(c);
+        pd.c = c; if (++pd.n >= P[2] && now - pd.t >= P[4]) accept(c);
         return;
       }
       if (now - Mic.last[m] < 150 || !Mic.armed[m]) return why(m, 'refractory');
       // right after a lower note was heard, its overtones (octave, twelfth, two octaves) don't count unless both were expected together
-      const fresh = x => x >= 21 && now - Mic.last[x] < 350 && !(Mic.withSet[x] && Mic.withSet[x].has(m));
+      const fresh = x => x >= 21 && now - Mic.last[x] < 160 && !(Mic.withSet[x] && Mic.withSet[x].has(m));
       if (fresh(m - 12) || fresh(m - 19) || fresh(m - 24)) return why(m, 'fresh');
       if (!(sal[m] > P[3] * recentMin(m))) return why(m, 'norise');
       // a ringing note swelling back up (its strings beat against each other) isn't a new press
-      if (sal[m] < 0.8 * Mic.longPeak[m]) return why(m, 'swell');
+      if (sal[m] < 0.65 * Mic.longPeak[m]) return why(m, 'swell');
       if (!(sal[m] > 1.1 * Math.max(sal[m - 1], sal[m + 1]))) return why(m, 'neighbour');
       const c = micEvidence(m, P); if (c == null) return why(m, 'evidence');
       if (!micOwnRise(m, now, P)) return why(m, 'notown');
