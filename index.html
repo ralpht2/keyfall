@@ -272,7 +272,7 @@ function toast(msg, ms = 2600) { const t = $('#toast'); t.textContent = msg; t.c
 
 // ---------- settings ----------
 const DEF = { names:'letters', keyLabels:'c', pcLabels:false, showOther:true, look:3, range:'auto', anyOct:false,
-  mySound:true, accomp:true, accVol:0.7, vol:0.85, metro:false, midiIn:'all', pcBase:48, listen:'auto',
+  mySound:true, accomp:true, accVol:0.7, vol:0.85, metro:false, midiIn:'all', pcBase:48, listen:'auto', micSens:'normal',
   mode:'wait', hands:'both', level:2, speed:0.8, lastSong:'b:twinkle' };
 const settings = Object.assign({}, DEF, store.get('kf_settings', {}));
 function saveSettings() { store.set('kf_settings', settings); }
@@ -1172,6 +1172,7 @@ function renderSettings() {
       ${row('MIDI keyboard', sel('midiIn', midiOpts), midiStatusText())}
       ${row('Sound for the notes you play', tog('mySound'), 'Turn off if your keyboard has its own speakers.')}
       ${row('Listen with the microphone', sel('listen', [['auto', 'Automatic'], ['on', 'Always'], ['off', 'Off']]), (Mic.on ? '<b>Listening now.</b> ' : Mic.errText ? '<b>' + esc(Mic.errText) + '</b> ' : '') + 'Automatic listens whenever no MIDI keyboard is plugged in, so you can play a real piano. It hears chords and both hands. Use headphones if the app plays the other hand for you.')}
+      ${row('Listening sensitivity', sel('micSens', [['low', 'Low (noisy room)'], ['normal', 'Normal'], ['high', 'High (quiet room, soft playing)']]), 'If background sounds count as notes, choose Low. If your notes are missed, choose High.')}
       ${row('Computer keyboard', `<div class="step"><button data-act="pc-">−</button><span>${noteName(settings.pcBase)}</span><button data-act="pc+">+</button></div>`, 'Bottom row Z–/ and top row Q–] play keys starting at this note. ↑ and ↓ change it too.')}
       ${row('Show computer-key letters', tog('pcLabels'))}
       ${row('Keys shown', sel('range', [['auto', 'Fit to the song'], ['88', '88 keys'], ['76', '76 keys'], ['61', '61 keys'], ['49', '49 keys'], ['37', '37 keys'], ['25', '25 keys']]), 'Match your keyboard. Notes outside it are moved by octaves to fit.')}
@@ -1388,7 +1389,8 @@ function initMidi() {
 //  the sound for exactly those notes and their overtones — chords and both hands work.
 // =====================================================================
 const Mic = { on: false, starting: false, denied: false, errText: '', an: null, spec: null, amp: null, sal: null, min: null, last: null,
-  stream: null, tbl: null, wsum: null, floor: 1e-6, frame: 0, nLim: 0, heard: null, heardT: 0, ringT: null, ringS: null, ri: 0 };
+  stream: null, tbl: null, wsum: null, floor: 1e-6, frame: 0, nLim: 0, heard: null, heardT: 0, ringT: null, ringS: null, ri: 0,
+  noise: null, nzInit: false, fexp: null, pend: new Map() };
 const RING = 32;
 const HW = [1, 0.8, 0.6, 0.45, 0.35, 0.25];
 const hasMidiKeyboard = () => !!(midiAccess && midiAccess.inputs.size);
@@ -1420,7 +1422,7 @@ async function micStart() {
     an.fftSize = 8192; an.smoothingTimeConstant = 0; an.minDecibels = -130; an.maxDecibels = 0;
     src.connect(an);
     const N = an.frequencyBinCount, bw = ctx.sampleRate / an.fftSize, top = Math.min(5000, ctx.sampleRate / 2 - 2 * bw);
-    Mic.an = an; Mic.spec = new Float32Array(N); Mic.amp = new Float32Array(N); Mic.nLim = Math.min(N, Math.ceil(top * 1.03 / bw) + 2);
+    Mic.an = an; Mic.bw = bw; Mic.spec = new Float32Array(N); Mic.amp = new Float32Array(N); Mic.nLim = Math.min(N, Math.ceil(top * 1.03 / bw) + 2);
     Mic.tbl = []; Mic.wsum = new Float32Array(128);
     for (let m = 0; m < 128; m++) {
       const f = 440 * Math.pow(2, (m - 69) / 12), t = [];
@@ -1431,7 +1433,9 @@ async function micStart() {
       }
       Mic.tbl[m] = t;
     }
-    Mic.sal = new Float32Array(130); Mic.h12 = new Float32Array(130); Mic.last = new Float64Array(130); Mic.ringT = new Float64Array(RING); Mic.ringS = new Float32Array(RING * 130); Mic.ri = 0;
+    Mic.noise = new Float32Array(N); Mic.nzInit = false; Mic.pend = new Map(); Mic.fexp = new Float32Array(130); for (let m = 0; m < 128; m++) Mic.fexp[m] = 440 * Math.pow(2, (m - 69) / 12);
+    Mic.flatLo = Math.max(1, Math.floor(100 / bw)); Mic.flatHi = Math.min(Mic.nLim - 1, Math.floor(3000 / bw));
+    Mic.sal = new Float32Array(130); Mic.h12 = new Float32Array(130); Mic.last = new Float64Array(130); Mic.ringT = new Float64Array(RING); Mic.ringS = new Float32Array(RING * 130); Mic.ringA = null; Mic.withSet = []; Mic.ri = 0;
     Mic.floorLo = Math.max(1, Math.floor(60 / bw)); Mic.floorHi = Math.min(Mic.nLim - 1, Math.floor(4000 / bw));
     Mic.on = true; Mic.denied = false; Mic.errText = '';
     toast(settings.accomp && settings.hands !== 'both' ? 'Listening. Use headphones so the microphone only hears your piano.' : 'Listening. Just play — chords work too.', 4000);
@@ -1458,35 +1462,123 @@ function micCandidates() { // notes due now, and notes coming up next (which get
   for (let i = lowerBound(A.notes, S.time - tol); i < A.notes.length; i++) { const n = A.notes[i]; if (n.t > S.time + tol) break; if (n.practice && !n.ok && !n.miss) cur.add(n.m); }
   return { cur, ahead };
 }
-function micFire(m) { userOn(m, 90, 'mic'); setTimeout(() => userOff(m, 'mic'), 180); }
+function micFire(m) { Mic.heard = m; Mic.heardT = performance.now(); userOn(m, 90, 'mic'); setTimeout(() => userOff(m, 'mic'), 180); }
+// how strict the listening is: [peak above the room's usual noise, peak above its surroundings, frames it must stay steady]
+const MIC_SENS = { high: [5, 2.4, 2], normal: [9, 3, 3], low: [16, 4, 4] };
+// Is note m really sounding? Needs sharp, in-tune peaks at its pitch and overtones, well above the room's noise.
+function micEvidence(m, P) {
+  const t = Mic.tbl[m], amp = Mic.amp, nz = Mic.noise, L = Mic.nLim;
+  let count = 0, low = false, cents = null, best = 0;
+  for (let i = 0, h = 1; i < t.length && h <= 4; i += 3, h++) {
+    let pb = t[i], pv = 0;
+    for (let b = t[i]; b <= t[i + 1]; b++) if (amp[b] > pv) { pv = amp[b]; pb = b; }
+    if (pb < 2 || pb > L - 3 || amp[pb - 1] > pv || amp[pb + 1] > pv) continue;
+    let lft = 0, rgt = 0; for (let d = 4; d <= 9; d++) { lft += amp[pb - d] || 0; rgt += amp[pb + d] || 0; }
+    const ring = Math.min(lft, rgt) / 6;
+    if (pv < ring * P[1] || pv < nz[pb] * P[0]) continue;
+    count++;
+    if (h <= 2) {
+      low = true;
+      if (pv > best) { // exact pitch from the peak shape
+        best = pv; const a = amp[pb - 1], c = amp[pb + 1], den = a - 2 * pv + c, off = den ? 0.5 * (a - c) / den : 0;
+        cents = 1200 * Math.log2(((pb + off) * Mic.bw / h) / Mic.fexp[m]);
+      }
+    }
+  }
+  const need = m >= 84 ? 1 : 2;
+  return (count >= need && low && cents != null && Math.abs(cents) < 45) ? cents : null;
+}
+function micBins(f) { const bw = Mic.bw; return [Math.max(1, Math.floor(f * 0.983 / bw)), Math.min(Mic.nLim - 1, Math.ceil(f * 1.017 / bw))]; }
+// strength of whatever is at frequency f, compared with the room's usual noise there
+function micBand(f) {
+  const [lo, hi] = micBins(f); let pv = 0, pb = lo;
+  for (let b = lo; b <= hi; b++) if (Mic.amp[b] > pv) { pv = Mic.amp[b]; pb = b; }
+  return pv / (Mic.noise[pb] || 1e-9);
+}
+// how much louder frequency f is now than at its quietest in the last ~180 ms
+function micBandRise(f, now) {
+  const [lo, hi] = micBins(f), L = Mic.nLim; let cur = 0, past = Infinity;
+  for (let b = lo; b <= hi; b++) if (Mic.amp[b] > cur) cur = Mic.amp[b];
+  for (let k = 0; k < RING; k++) if (now - Mic.ringT[k] <= 180) { let v = 0; const o = k * L; for (let b = lo; b <= hi; b++) if (Mic.ringA[o + b] > v) v = Mic.ringA[o + b]; if (v < past) past = v; }
+  return past > 0 ? cur / past : (cur > 0 ? Infinity : 0);
+}
+// amplitude at f if there's a genuine sharp peak there (not spill-over from a loud neighbour), else 0
+function micPeak(f, P) {
+  const [lo, hi] = micBins(f), amp = Mic.amp, L = Mic.nLim; let pv = 0, pb = lo;
+  for (let b = lo; b <= hi; b++) if (amp[b] > pv) { pv = amp[b]; pb = b; }
+  if (pb < 2 || pb > L - 3 || amp[pb - 1] > pv || amp[pb + 1] > pv) return 0;
+  let l = 0, r = 0; for (let d = 4; d <= 9; d++) { l += amp[pb - d] || 0; r += amp[pb + d] || 0; }
+  return (pv > Math.min(l, r) / 6 * P[1] && pv > Mic.noise[pb] * P[0]) ? pv : 0;
+}
+function micRecentMin(m, now) { let v = Infinity; for (let k = 0; k < RING; k++) if (now - Mic.ringT[k] <= 180) { const x = Mic.ringS[k * 130 + m]; if (x < v) v = x; } return v; }
+// Voices and other sounds are a lower pitch plus overtones; one of those overtones can look like a piano note.
+// If a lower pitch that just started (and isn't an expected note) explains this one, it doesn't count.
+function micExplainedBelow(m, P, isCand, now) {
+  const f = Mic.fexp[m], top = Math.max(micPeak(f, P), micPeak(2 * f, P));
+  for (let k = 2; k <= 20; k++) {
+    const f0 = f / k; if (f0 < 55) break;
+    const f1 = k === 2 ? 3 * f0 : 2 * f0;
+    const a0 = micPeak(f0, P), a1 = micPeak(f1, P);
+    if (a0 > 0.12 * top && a1 > 0.12 * top) {
+      const low = Math.round(69 + 12 * Math.log2(f0 / 440));
+      if (isCand(low)) continue;
+      if (micBandRise(f0, now) > 1.8 || micBandRise(f1, now) > 1.8) return true;
+    }
+  }
+  return false;
+}
 function micPoll(now) {
   if (!Mic.on || !Mic.an) return;
   Mic.an.getFloatFrequencyData(Mic.spec);
-  const sp = Mic.spec, amp = Mic.amp, L = Mic.nLim;
+  const sp = Mic.spec, amp = Mic.amp, L = Mic.nLim, nz = Mic.noise;
   for (let i = 0; i < L; i++) { const v = sp[i]; amp[i] = v > -200 ? Math.pow(10, v / 20) : 0; }
+  // learn the room's normal noise in every frequency band (follows quiet moments, rises slowly)
+  if (!Mic.nzInit) { nz.set(amp.subarray(0, L)); Mic.nzInit = true; }
+  for (let i = 0; i < L; i++) { const a = amp[i]; nz[i] = a < nz[i] ? nz[i] * 0.85 + a * 0.15 : nz[i] * 1.004 + 1e-9; }
   if ((Mic.frame++ & 7) === 0) { const a = Array.from(amp.subarray(Mic.floorLo, Mic.floorHi)).sort((x, y) => x - y); Mic.floor = Math.max(1e-7, a[a.length >> 1]); }
-  const sal = Mic.sal, mn = Mic.min, fl = Mic.floor;
-  let best = -1, bs = 0;
+  // noise-like frames (claps, knocks, hiss) have a flat spectrum; piano notes are peaky
+  let lg = 0, ar = 0; const n0 = Mic.flatLo, n1 = Mic.flatHi;
+  for (let i = n0; i < n1; i++) { const a = amp[i] + 1e-12; lg += Math.log(a); ar += a; }
+  const flat = Math.exp(lg / (n1 - n0)) / (ar / (n1 - n0));
+  const sal = Mic.sal;
   for (let m = 21; m <= 108; m++) {
     const t = Mic.tbl[m]; let s = 0;
-    let h12 = 0;
-    for (let i = 0; i < t.length; i += 3) { let mx = 0; for (let b = t[i]; b <= t[i + 1]; b++) if (amp[b] > mx) mx = amp[b]; s += mx * t[i + 2]; if (i < 6 && mx > h12) h12 = mx; }
-    s /= (Mic.wsum[m] || 1); sal[m] = s; Mic.h12[m] = h12; if (s > bs) { bs = s; best = m; }
+    for (let i = 0; i < t.length; i += 3) { let mx = 0; for (let b = t[i]; b <= t[i + 1]; b++) if (amp[b] > mx) mx = amp[b]; s += mx * t[i + 2]; }
+    sal[m] = s / (Mic.wsum[m] || 1);
   }
-  // the quietest each note has been over the last ~180 ms (to spot a fresh key press)
-  const recentMin = m => { let v = Infinity; for (let k = 0; k < RING; k++) if (now - Mic.ringT[k] <= 180) { const x = Mic.ringS[k * 130 + m]; if (x < v) v = x; } return v; };
-  // a note counts when it is clearly above the room noise, has just got louder (a new key press),
-  // and stands out from the notes a semitone either side
-  const ready = m => sal[m] > fl * 6 && Mic.h12[m] > fl * 8 && now - Mic.last[m] > 230 && sal[m] > 1.25 * Math.max(sal[m - 1], sal[m + 1]) && sal[m] > 1.55 * recentMin(m);
+  const recentMin = m => micRecentMin(m, now);
+  const P = MIC_SENS[settings.micSens] || MIC_SENS.normal;
   const cands = micCandidates();
+  // notes the app itself is playing out loud (and their overtones) can't count as yours
+  const own = new Set(); for (const n of S.activeAuto) { own.add(n.m); own.add(n.m + 12); own.add(n.m + 19); own.add(n.m + 24); }
+  const pend = Mic.pend;
+  const isCand = x => cands && (cands.cur.has(x) || cands.ahead.has(x));
   if (cands) {
-    for (const m of cands.cur) if (m >= 21 && m <= 108 && ready(m)) { Mic.last[m] = now; micFire(m); }
-    // a coming note that is an overtone (octave or twelfth) of a note just played is probably that overtone
-    for (const m of cands.ahead) if (m >= 21 && m <= 108 && ready(m) && now - Mic.last[m - 12] > 250 && now - Mic.last[m - 19] > 250) { Mic.last[m] = now; micFire(m); }
+    const consider = (m, ahead) => {
+      if (m < 21 || m > 108 || own.has(m)) return;
+      const pd = pend.get(m);
+      if (pd) {
+        const c = micEvidence(m, P);
+        if (c == null || Math.abs(c - pd.c) > 7 || Math.abs(c - pd.c0) > 12 || now - pd.t > 200) { pend.delete(m); return; }
+        pd.c = c; if (++pd.n >= P[2]) { pend.delete(m); Mic.last[m] = now; Mic.withSet[m] = cands.cur; micFire(m); }
+        return;
+      }
+      if (flat > 0.42 || now - Mic.last[m] < 230) return;
+      // right after a lower note was heard, its overtones (octave, twelfth, two octaves) don't count unless both were expected together
+      const fresh = x => x >= 21 && now - Mic.last[x] < 250 && !(Mic.withSet[x] && Mic.withSet[x].has(m));
+      if (fresh(m - 12) || fresh(m - 19) || fresh(m - 24)) return;
+      if (!(sal[m] > 1.55 * recentMin(m) && sal[m] > 1.25 * Math.max(sal[m - 1], sal[m + 1]))) return;
+      const c = micEvidence(m, P); if (c == null) return;
+      if (micExplainedBelow(m, P, isCand, now)) return;
+      pend.set(m, { t: now, c, c0: c, n: 0 });
+    };
+    for (const m of cands.cur) consider(m, false);
+    for (const m of cands.ahead) consider(m, true);
   }
-  else if (!S.playing && best > 0 && ready(best)) { Mic.last[best] = now; micFire(best); }
-  if (best > 0 && bs > fl * 6) { Mic.heard = best; Mic.heardT = now; }
+  for (const m of [...pend.keys()]) if (!cands || !(cands.cur.has(m) || cands.ahead.has(m))) pend.delete(m);
   Mic.ri = (Mic.ri + 1) % RING; Mic.ringT[Mic.ri] = now; Mic.ringS.set(sal, Mic.ri * 130);
+  if (!Mic.ringA) Mic.ringA = new Float32Array(RING * L);
+  Mic.ringA.set(amp.subarray(0, L), Mic.ri * L);
 }
 
 // =====================================================================
