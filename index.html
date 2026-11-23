@@ -102,6 +102,16 @@ select{background:var(--lacquer);border:1px solid var(--line);border-radius:9px;
 .songrow .t small{color:var(--muted);font-size:12.5px}
 .songrow .best{font-variant-numeric:tabular-nums;color:var(--brass);font-size:13px}
 .songrow .del{width:30px;height:30px;border-radius:7px;color:var(--muted)}
+.sheet h4{font-size:13.5px;font-weight:600;color:var(--brass);margin:14px 0 4px}
+.recrow{display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:9px}
+.recrow:hover{background:var(--panel2)}
+.recrow .t{flex:1;min-width:0}
+.recrow .t b{display:block;font:400 17px/1.2 var(--serif);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.recrow .t small{color:var(--muted);font-size:12.5px}
+.btn.sm{padding:6px 11px;font-size:13px;text-decoration:none;color:var(--text);flex-shrink:0}
+.btn.sm.primary{color:#1b1610}
+.libsearch{width:100%;margin:0 0 6px;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--lacquer);color:var(--text);font-size:15px}
+.libsearch:focus{outline:2px solid var(--brass);outline-offset:1px}
 .songrow .del:hover{background:#3a2229;color:var(--bad)}
 .lvl{display:inline-flex;gap:2px;vertical-align:middle;margin-left:2px}
 .lvl i{width:6px;height:10px;border-radius:2px;background:#3a3445}
@@ -501,6 +511,19 @@ function songFromMidi(raw, title, id) {
   return song;
 }
 
+// ---------- songs picked to match what the user plays (names only: you add the MIDI yourself) ----------
+const REC = [
+  { name: 'Songs you already play', songs: [['Lonely', 'Justin Bieber & benny blanco'], ['No One Noticed', 'The Marías'], ['La Maritza', 'Sylvie Vartan'], ['Comptine d’un autre été', 'Yann Tiersen'], ['Jealous', 'Labrinth'], ['Trauma', 'NF'], ['Love Story', 'Indila'], ['Love Story', 'Taylor Swift']] },
+  { name: 'Film and solo piano', songs: [['La Valse d’Amélie', 'Yann Tiersen'], ['La Dispute', 'Yann Tiersen'], ['Porz Goret', 'Yann Tiersen'], ['Nuvole Bianche', 'Ludovico Einaudi'], ['Experience', 'Ludovico Einaudi'], ['Una Mattina', 'Ludovico Einaudi'], ['I Giorni', 'Ludovico Einaudi'], ['Primavera', 'Ludovico Einaudi'], ['River Flows in You', 'Yiruma'], ['Kiss the Rain', 'Yiruma'], ['May Be', 'Yiruma'], ['Time', 'Hans Zimmer'], ['Cornfield Chase', 'Hans Zimmer'], ['Merry-Go-Round of Life', 'Joe Hisaishi'], ['One Summer’s Day', 'Joe Hisaishi'], ['Married Life', 'Michael Giacchino'], ['Mariage d’Amour', 'Paul de Senneville'], ['Sadness and Sorrow', 'Toshio Masuda'], ['Arrival of the Birds', 'The Cinematic Orchestra'], ['Avril 14th', 'Aphex Twin']] },
+  { name: 'French songs', songs: [['Dernière danse', 'Indila'], ['Tourner dans le vide', 'Indila'], ['S.O.S', 'Indila'], ['La plus belle pour aller danser', 'Sylvie Vartan'], ['Tous les garçons et les filles', 'Françoise Hardy'], ['Comment te dire adieu', 'Françoise Hardy'], ['Mon amie la rose', 'Françoise Hardy'], ['Et si tu n’existais pas', 'Joe Dassin'], ['L’Été indien', 'Joe Dassin'], ['Les Champs-Élysées', 'Joe Dassin'], ['La Bohème', 'Charles Aznavour'], ['Ne me quitte pas', 'Jacques Brel'], ['La Vie en rose', 'Édith Piaf'], ['Comme d’habitude', 'Claude François'], ['Je te promets', 'Johnny Hallyday'], ['Je t’aime', 'Lara Fabian'], ['Pour que tu m’aimes encore', 'Céline Dion'], ['Je veux', 'Zaz'], ['Formidable', 'Stromae']] },
+  { name: 'Emotional pop ballads', songs: [['Ghost', 'Justin Bieber'], ['Off My Face', 'Justin Bieber'], ['Someone You Loved', 'Lewis Capaldi'], ['Before You Go', 'Lewis Capaldi'], ['Another Love', 'Tom Odell'], ['Arcade', 'Duncan Laurence'], ['When I Was Your Man', 'Bruno Mars'], ['Glimpse of Us', 'Joji'], ['All I Want', 'Kodaline'], ['Let Her Go', 'Passenger'], ['Say Something', 'A Great Big World & Christina Aguilera'], ['Skinny Love', 'Birdy'], ['People Help the People', 'Birdy'], ['drivers license', 'Olivia Rodrigo'], ['traitor', 'Olivia Rodrigo'], ['happier', 'Olivia Rodrigo'], ['All Too Well', 'Taylor Swift'], ['Lover', 'Taylor Swift'], ['Easy On Me', 'Adele'], ['Someone Like You', 'Adele'], ['when the party’s over', 'Billie Eilish'], ['lovely', 'Billie Eilish & Khalid'], ['ocean eyes', 'Billie Eilish'], ['What Was I Made For?', 'Billie Eilish'], ['Heather', 'Conan Gray'], ['Line Without a Hook', 'Ricky Montgomery'], ['Little Do You Know', 'Alex & Sierra'], ['Photograph', 'Ed Sheeran'], ['Perfect', 'Ed Sheeran'], ['Too Good at Goodbyes', 'Sam Smith'], ['Stay With Me', 'Sam Smith'], ['Falling', 'Harry Styles'], ['If the World Was Ending', 'JP Saxe & Julia Michaels'], ['The Night We Met', 'Lord Huron'], ['Somewhere Only We Know', 'Keane'], ['Hallelujah', 'Jeff Buckley']] },
+  { name: 'Dark and dramatic, like Labrinth and NF', songs: [['Mount Everest', 'Labrinth'], ['Still Don’t Know My Name', 'Labrinth'], ['Formula', 'Labrinth'], ['Forever', 'Labrinth'], ['All for Us', 'Labrinth & Zendaya'], ['Let You Down', 'NF'], ['Paralyzed', 'NF'], ['Hope', 'NF'], ['Time', 'NF'], ['Mockingbird', 'Eminem'], ['Love the Way You Lie (Part II)', 'Rihanna & Eminem'], ['Runaway', 'Kanye West'], ['changes', 'XXXTENTACION']] },
+  { name: 'Dreamy, like The Marías', songs: [['Sienna', 'The Marías'], ['Hush', 'The Marías'], ['I Don’t Know You', 'The Marías'], ['Cariño', 'The Marías'], ['Apocalypse', 'Cigarettes After Sex'], ['K.', 'Cigarettes After Sex'], ['Sweater Weather', 'The Neighbourhood'], ['Space Song', 'Beach House'], ['Pink + White', 'Frank Ocean'], ['Ivy', 'Frank Ocean'], ['Glue Song', 'beabadoobee'], ['Bags', 'Clairo'], ['Pretty Girl', 'Clairo'], ['Mystery of Love', 'Sufjan Stevens']] },
+];
+const recId = (t, a) => 'r:' + (t + ' ' + a).toLowerCase().normalize('NFD').replace(/[^a-z0-9]+/g, '-');
+const recFind = (t, a) => 'https://www.google.com/search?q=' + encodeURIComponent(`${t} ${a} piano midi`);
+let pendingRec = null;
+
 // ---------- built-in practice songs (public domain) ----------
 function parseSeq(str, ppq, vel) {
   const notes = []; let tick = 0, dur = 1;
@@ -532,6 +555,8 @@ function preludeParts(ppq) {
   return { rh, lh };
 }
 const FE_A = 'E5/0.25 D#5 E5 B4 D5 C5 | A4/0.5 r/0.25 C4/0.25 E4 A4 | B4/0.5 r/0.25 E4/0.25 G#4 B4 | C5/0.5 r/0.25 E4/0.25 E5 D#5 | E5/0.25 D#5 E5 B4 D5 C5 | A4/0.5 r/0.25 C4/0.25 E4 A4 | B4/0.5 r/0.25 E4/0.25 C5 B4';
+const CANON_LH = 'D3+A3/2 A2+E3 B2+F#3 F#2+C#3 | G2+D3 D2+A2 G2+D3 A2+E3';
+const ML = (triad, times) => Array(times).fill(triad.split(' ').map((n, i) => i ? n : n + '/0.33333').join(' ')).join(' ');
 const FE_AL = 'r/1.5 | A2/0.25 E3/0.25 A3/1 | E2/0.25 E3/0.25 G#3/1 | A2/0.25 E3/0.25 A3/1 | r/1.5 | A2/0.25 E3/0.25 A3/1 | E2/0.25 E3/0.25 G#3/1';
 const BUILTIN = [
   { id:'b:twinkle', title:'Twinkle, Twinkle, Little Star', by:'Traditional', stars:1, bpm:96, sig:[4,4],
@@ -553,6 +578,15 @@ const BUILTIN = [
     rh:'r/1 E5/0.25 D#5 | ' + FE_A + ' | A4/0.5 r/0.5 E5/0.25 D#5 | ' + FE_A + ' | A4/1.5',
     lh:'r/1.5 | ' + FE_AL + ' | A2/0.25 E3/0.25 A3/1 | ' + FE_AL + ' | A2/0.25 E3/0.25 A3/1' },
   { id:'b:prelude', title:'Prelude in C (bars 1–19)', by:'J. S. Bach', stars:3, bpm:66, sig:[4,4], gen: preludeParts },
+  { id:'b:canon', title:'Canon in D (simplified)', by:'Pachelbel', stars:2, bpm:72, sig:[4,4],
+    rh:'F#5/2 E5 D5 C#5 | B4 A4 B4 C#5 | D5 C#5 B4 A4 | G4 F#4 G4 E4 | D5/1 F#5 A5 G5 | F#5 D5 F#5 E5 | D5 B4 D5 A5 | G5 B5 A5 G5 | F#5/2 E5 D5 C#5 | B4 A4 B4 C#5 | D5+F#5+A5/4',
+    lh:CANON_LH + ' | ' + CANON_LH + ' | ' + CANON_LH + ' | ' + CANON_LH + ' | D2+D3/4' },
+  { id:'b:greensleeves', title:'Greensleeves', by:'Traditional', stars:2, bpm:100, sig:[3,4],
+    rh:'r/2 A4/1 | C5/2 D5/1 | E5/1.5 F5/0.5 E5/1 | D5/2 B4/1 | G4/1.5 A4/0.5 B4/1 | C5/2 A4/1 | A4/1.5 G#4/0.5 A4/1 | B4/2 G#4/1 | E4/2 A4/1 | C5/2 D5/1 | E5/1.5 F5/0.5 E5/1 | D5/2 B4/1 | G4/1.5 A4/0.5 B4/1 | C5/1.5 B4/0.5 A4/1 | G#4/1.5 F#4/0.5 G#4/1 | A4/3 | G5/3 | G5/1.5 F#5/0.5 E5/1 | D5/2 B4/1 | G4/1.5 A4/0.5 B4/1 | C5/2 A4/1 | A4/1.5 G#4/0.5 A4/1 | B4/2 G#4/1 | E4/3 | G5/3 | G5/1.5 F#5/0.5 E5/1 | D5/2 B4/1 | G4/1.5 A4/0.5 B4/1 | C5/1.5 B4/0.5 A4/1 | G#4/1.5 F#4/0.5 G#4/1 | A4/3',
+    lh:'r/3 | A2+E3/3 | C3+G3/3 | G2+D3/3 | E2+B2/3 | A2+E3/3 | E2+B2/3 | E2+B2/3 | A2+E3/3 | A2+E3/3 | C3+G3/3 | G2+D3/3 | E2+B2/3 | A2+E3/3 | E2+B2/3 | A2+E3/3 | C3+G3/3 | G2+D3/3 | G2+D3/3 | E2+B2/3 | A2+E3/3 | E2+B2/3 | E2+B2/3 | E2+B2/3 | C3+G3/3 | G2+D3/3 | G2+D3/3 | E2+B2/3 | A2+E3/3 | E2+B2/3 | A2+E3/3' },
+  { id:'b:moonlight', title:'Moonlight Sonata (opening)', by:'Beethoven', stars:2, bpm:56, sig:[4,4],
+    rh:ML('G#3 C#4 E4', 4) + ' | ' + ML('G#3 C#4 E4', 4) + ' | ' + ML('A3 C#4 E4', 2) + ' ' + ML('A3 D4 F#4', 2) + ' | G#3/0.33333 C4 F#4 G#3 C#4 E4 G#3 C#4 D#4 F#3 C4 D#4 | ' + ML('G#3 C#4 E4', 4) + ' | G#3+C#4+E4/4',
+    lh:'C#2+C#3/4 | B1+B2/4 | A1+A2/2 F#1+F#2/2 | G#1+G#2/4 | C#2+C#3/4 | C#2+C#3/4' },
 ];
 function songFromDef(def) {
   const ppq = 480; let rh, lh;
@@ -847,22 +881,23 @@ function rebuild(keep = true) {
   seek(keep ? t : startTime());
   if (!keep) S.time = startTime();
 }
-async function importFiles(files) {
+async function importFiles(files, rec = null) {
   let lastId = null, n = 0;
+  if (rec && files.length !== 1) rec = null;
   for (const f of files) {
     try {
       const buf = await f.arrayBuffer();
       const raw = parseMidi(buf);
-      const title = f.name.replace(/\.(mid|midi|kar|rmi)$/i, '').replace(/[_]+/g, ' ').replace(/\s+/g, ' ').trim() || 'Untitled';
+      const title = rec ? rec.title : (f.name.replace(/\.(mid|midi|kar|rmi)$/i, '').replace(/[_]+/g, ' ').replace(/\s+/g, ' ').trim() || 'Untitled');
       const id = 'u:' + hashBuf(buf);
       songFromMidi(raw, title, id); // validate
-      const rec = { id, title, b64: bufToB64(buf), added: Date.now() };
-      const list = userSongs().filter(x => x.id !== id); list.unshift(rec);
-      if (!store.set('kf_songs', list)) { session.set(id, rec); toast('Storage is full, so this song will only stay until you close the page.', 4000); }
+      const entry = { id, title, by: rec ? rec.artist : '', rec: rec ? rec.id : '', b64: bufToB64(buf), added: Date.now() };
+      const list = userSongs().filter(x => x.id !== id); list.unshift(entry);
+      if (!store.set('kf_songs', list)) { session.set(id, entry); toast('Storage is full, so this song will only stay until you close the page.', 4000); }
       lastId = id; n++;
     } catch (err) { toast(`${f.name}: ${err.message}`, 4500); }
   }
-  if (lastId) { loadSong(lastId); closeModals(); if (n > 1) toast(`Added ${n} songs to your library.`); else toast('Song added. Pick a level and hands, then press play.'); }
+  if (lastId) { loadSong(lastId); closeModals(); if (n > 1) toast(`Added ${n} songs to your library.`); else toast(`${rec ? rec.title : 'Song'} added. Pick a level and hands, then press play.`); }
 }
 function deleteSong(id) {
   store.set('kf_songs', userSongs().filter(x => x.id !== id)); session.delete(id);
@@ -1126,28 +1161,45 @@ function lvlBars(n) { return `<span class="lvl" aria-label="Difficulty ${n} of 3
 function openLib() { renderLib(); openModal('#mLib'); }
 function renderLib() {
   const us = userSongs().concat([...session.values()]);
-  const row = (id, title, sub, extra = '') => { const b = bestFor(id); return `<div class="songrow ${id === S.entryId ? 'cur' : ''}" data-song="${esc(id)}" role="button" tabindex="0"><div class="t"><b>${esc(title)}</b><small>${sub}</small></div>${b != null ? `<span class="best" title="Your best accuracy">${b}%</span>` : ''}${extra}</div>`; };
+  const byRec = new Map(us.filter(u => u.rec).map(u => [u.rec, u.id]));
+  const row = (id, title, sub, extra = '') => { const b = bestFor(id); return `<div class="songrow ${id === S.entryId ? 'cur' : ''}" data-song="${esc(id)}" data-q="${esc((title + ' ' + sub).toLowerCase())}" role="button" tabindex="0"><div class="t"><b>${esc(title)}</b><small>${sub}</small></div>${b != null ? `<span class="best" title="Your best accuracy">${b}%</span>` : ''}${extra}</div>`; };
+  const recRow = ([t, a]) => {
+    const id = recId(t, a), have = byRec.get(id);
+    const btns = have ? `<button class="btn sm primary" data-song="${esc(have)}">Play</button>`
+      : `<a class="btn sm" href="${esc(recFind(t, a))}" target="_blank" rel="noopener" title="Search the web for a piano MIDI of this song">Find</a><button class="btn sm" data-addrec="${esc(id)}" title="Choose the .mid file you downloaded">Add</button>`;
+    return `<div class="recrow${have ? ' have' : ''}" data-q="${esc((t + ' ' + a).toLowerCase())}"><div class="t"><b>${esc(t)}</b><small>${esc(a)}${have ? ' — in your songs' : ''}</small></div>${btns}</div>`;
+  };
   $('#libBody').innerHTML = `
+    <input class="libsearch" id="libSearch" type="search" placeholder="Search songs or artists" aria-label="Search songs or artists" autocomplete="off">
     <section>
-      <div class="drop" id="drop"><button class="btn primary" id="btnImport">Add a MIDI file</button><p>Or drop .mid files here. Any song works — the level menu simplifies it for you.</p></div>
-      ${us.length ? `<h3>Your songs</h3><div class="songlist">${us.map(u => row(u.id, u.title, 'Imported ' + new Date(u.added).toLocaleDateString(), `<button class="del" data-del="${esc(u.id)}" aria-label="Remove ${esc(u.title)}" title="Remove from library">✕</button>`)).join('')}</div>` : ''}
+      <div class="drop" id="drop"><button class="btn primary" id="btnImport">Add a MIDI file</button><button class="btn" id="btnRecs">Songs like yours</button><p>Any song works — the level menu simplifies it for you.</p></div>
+      ${us.length ? `<h3>Your songs</h3><div class="songlist">${us.map(u => row(u.id, u.title, u.by ? esc(u.by) : 'Imported ' + new Date(u.added).toLocaleDateString(), `<button class="del" data-del="${esc(u.id)}" aria-label="Remove ${esc(u.title)}" title="Remove from library">✕</button>`)).join('')}</div>` : ''}
     </section>
     <section>
       <h3>Practice songs</h3>
       <div class="songlist">${BUILTIN.map(b => row(b.id, b.title, `${esc(b.by)} ${lvlBars(b.stars)}`)).join('')}</div>
     </section>
     <section>
-      <h3>Finding more songs</h3>
-      <p>Search the web for the song name plus <b>piano midi</b> and download the .mid file. Free sources include bitmidi.com, midiworld.com and the MIDI download on MuseScore scores. Files arranged for piano with two tracks (one per hand) work best; full band files work too — open Settings to choose which instrument becomes which hand.</p>
+      <h3 id="recs">Songs like yours</h3>
+      <p>Picked to match what you play. For each one, tap <b>Find</b>, download a <b>.mid</b> file from the results, then tap <b>Add</b> and choose that file. Piano arrangements with one track per hand work best.</p>
+      ${REC.map(g => `<h4>${esc(g.name)}</h4><div class="songlist">${g.songs.map(recRow).join('')}</div>`).join('')}
     </section>`;
 }
 $('#libBody').addEventListener('click', e => {
   const del = e.target.closest('[data-del]'); if (del) { e.stopPropagation(); deleteSong(del.dataset.del); return; }
-  if (e.target.closest('#btnImport')) { $('#fileIn').click(); return; }
+  if (e.target.closest('#btnImport')) { pendingRec = null; $('#fileIn').click(); return; }
+  if (e.target.closest('#btnRecs')) { $('#recs').scrollIntoView({ behavior: REDUCED ? 'auto' : 'smooth' }); return; }
+  const add = e.target.closest('[data-addrec]');
+  if (add) { for (const g of REC) for (const [t, a] of g.songs) if (recId(t, a) === add.dataset.addrec) pendingRec = { id: recId(t, a), title: t, artist: a }; $('#fileIn').click(); return; }
   const r = e.target.closest('[data-song]'); if (r) { if (loadSong(r.dataset.song)) closeModals(); }
 });
 $('#libBody').addEventListener('keydown', e => { if (e.key === 'Enter') { const r = e.target.closest('[data-song]'); if (r && loadSong(r.dataset.song)) closeModals(); } });
-$('#fileIn').addEventListener('change', e => { const f = [...e.target.files]; e.target.value = ''; if (f.length) importFiles(f); });
+$('#fileIn').addEventListener('change', e => { const f = [...e.target.files]; e.target.value = ''; const r = pendingRec; pendingRec = null; if (f.length) importFiles(f, r); });
+$('#libBody').addEventListener('input', e => {
+  if (e.target.id !== 'libSearch') return; const q = e.target.value.trim().toLowerCase();
+  for (const el of $('#libBody').querySelectorAll('[data-q]')) el.style.display = !q || el.dataset.q.includes(q) ? '' : 'none';
+  for (const h of $('#libBody').querySelectorAll('h3, h4')) { const list = h.nextElementSibling; if (list && list.classList.contains('songlist')) h.style.display = [...list.children].some(c => c.style.display !== 'none') ? '' : 'none'; }
+});
 let dragDepth = 0;
 window.addEventListener('dragenter', e => { e.preventDefault(); dragDepth++; const d = $('#drop'); if (d) d.classList.add('hot'); });
 window.addEventListener('dragleave', () => { if (--dragDepth <= 0) { dragDepth = 0; const d = $('#drop'); if (d) d.classList.remove('hot'); } });
